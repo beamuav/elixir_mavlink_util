@@ -121,7 +121,7 @@ defmodule MAVLink.Util.SystemMonitor do
     # and request a parameter list
     MAV.pack_and_send(%APM.Message.ParamRequestList{
       target_system: source_system, target_component: source_component}, version)
-    
+    Logger.info("First sighting of vehicle #{inspect {source_system, source_component}}, requesting parameter list")
     state
   end
   
