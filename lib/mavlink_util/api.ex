@@ -18,7 +18,7 @@ defmodule MAVLink.Util.API do
   
   def mavs() do
     scids = :ets.foldl(fn ({scid, _}, acc) -> [scid | acc] end, [], @systems)
-    Logger.info("mavs: listing #{length(scids)} visible {system, component} ids")
+    Logger.info("Listing #{length(scids)} visible vehicle {system, component} ids")
     {:ok, scids}
   end
   
@@ -28,12 +28,16 @@ defmodule MAVLink.Util.API do
   end
   
   def focus(pid) when is_pid(pid) do
-    with [{^pid, scid={system_id, component_id}}] <- :ets.lookup(@sessions, pid) do
-      Logger.info("focus: current focus of #{inspect pid} is {#{system_id}, #{component_id}}")
+    with [{^pid, scid}] <- :ets.lookup(@sessions, pid) do
+      if pid == self() do
+        Logger.info("Current vehicle focus is #{inspect scid}")
+      else
+        Logger.info("Current vehicle focus of #{inspect pid} is #{inspect scid}")
+      end
       {:ok, scid}
     else
       _ ->
-        Logger.warn("focus: #{inspect pid} has no focus")
+        Logger.warn("#{inspect pid} has no vehicle focus")
         {:error, :not_focussed}
     end
   end
@@ -74,11 +78,11 @@ defmodule MAVLink.Util.API do
              _, acc ->
                acc
            end, [], @params) do
-      Logger.info("params: listing #{length(param_list)} parameters from #{inspect scid} matching \"#{match}\"")
+      Logger.info("Listing #{length(param_list)} parameters from vehicle #{inspect scid} matching \"#{match}\"")
       {:ok, param_list}
     else
       _ ->
-        Logger.warn("params: error attempting to query params matching \"#{match}\" for #{inspect scid}")
+        Logger.warn("Error attempting to query params matching \"#{match}\" for vehicle #{inspect scid}")
         {:error, :query_failed}
     end
   end

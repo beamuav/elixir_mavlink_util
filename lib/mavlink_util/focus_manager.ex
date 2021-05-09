@@ -32,10 +32,10 @@ defmodule MAVLink.Util.FocusManager do
       if scid in mav_list do
         :ets.insert(@sessions, {caller_pid, scid})
         Process.monitor(caller_pid)
-        Logger.info("focus: set focus of #{inspect caller_pid} on #{inspect scid}")
+        Logger.info("Set focus of #{inspect caller_pid} to #{inspect scid}")
         {:reply, {:ok, scid}, state}
       else
-        Logger.warn("focus: no such {system, component} #{inspect scid}")
+        Logger.warn("No such vehicle #{inspect scid}")
         {:reply, {:error, :no_such_mav}, state}
       end
     else
