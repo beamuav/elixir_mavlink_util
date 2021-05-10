@@ -1,4 +1,4 @@
-defmodule MAVLink.Util.SystemMonitor do
+defmodule MAVLink.Util.CacheManager do
   @moduledoc """
 
   Populate and keep updated a set of protected ETS tables representing:
@@ -14,6 +14,7 @@ defmodule MAVLink.Util.SystemMonitor do
   use GenServer
   require Logger
   alias MAVLink.Router, as: MAV
+  import MAVLink.Util.FocusManager, only: [focus: 0]
   
   
   @messages :messages
@@ -35,6 +36,53 @@ defmodule MAVLink.Util.SystemMonitor do
   end
   
   
+  def mavs() do
+    scids = :ets.foldl(fn ({scid, _}, acc) -> [scid | acc] end, [], @systems)
+    Logger.info("Listing #{length(scids)} visible vehicle {system, component} ids")
+    {:ok, scids}
+  end
+  
+  
+  def params() do
+    with {:ok, scid} <- focus() do
+      params(scid)
+    end
+  end
+  
+  def params(scid={_, _}) do
+    params(scid, "")
+  end
+  
+  def params(match) when is_binary(match) do
+    with {:ok, scid} <- focus() do
+      params(scid, match)
+    end
+  end
+  
+  def params(scid={system_id, component_id}, match) when is_binary(match) do
+    with match_upcase <- String.upcase(match),
+         param_list when is_list(param_list) <- :ets.foldl(
+           fn
+             {{^system_id, ^component_id, param_id},
+              {_, %APM.Message.ParamValue{param_value: param_value}}}, acc ->
+               if String.contains?(param_id, match_upcase) do
+                 [{param_id, param_value} | acc]
+               else
+                 acc
+               end
+             _, acc ->
+               acc
+           end, [], @params) do
+      Logger.info("Listing #{length(param_list)} parameters from vehicle #{inspect scid} matching \"#{match}\"")
+      {:ok, param_list}
+    else
+      _ ->
+        Logger.warn("Error attempting to query params matching \"#{match}\" for vehicle #{inspect scid}")
+        {:error, :query_failed}
+    end
+  end
+  
+  
   @impl true
   def init(_opts) do
     :ets.new(@messages, [:named_table, :protected, {:read_concurrency, true}, :set])
@@ -45,7 +93,7 @@ defmodule MAVLink.Util.SystemMonitor do
     
     {
       :ok,
-      %MAVLink.Util.SystemMonitor{}
+      %MAVLink.Util.CacheManager{}
       |> one_second_loop
       |> five_second_loop
       |> ten_second_loop
