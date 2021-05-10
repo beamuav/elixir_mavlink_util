@@ -10,7 +10,7 @@ defmodule MAVLink.Util.Supervisor do
   @impl true
   def init(_) do
     children = [
-      {MAVLink.Util.SystemMonitor, %{}},
+      {MAVLink.Util.CacheManager, %{}},
       {MAVLink.Util.FocusManager, %{}}
     ]
     Supervisor.init(children, strategy: :one_for_one)
