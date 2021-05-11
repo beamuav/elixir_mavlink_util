@@ -14,6 +14,7 @@ defmodule MAVLink.Util.CacheManager do
   use GenServer
   require Logger
   alias MAVLink.Router, as: MAV
+  alias MAVLink.Util.ParamRequest
   import MAVLink.Util.FocusManager, only: [focus: 0]
   
   
@@ -23,7 +24,6 @@ defmodule MAVLink.Util.CacheManager do
   @one_second_loop :one_second_loop
   @five_second_loop :five_second_loop
   @ten_second_loop :ten_second_loop
-  @param_retry_interval 3000
   
   
   defstruct []
@@ -190,29 +190,6 @@ defmodule MAVLink.Util.CacheManager do
   end
   
   
-  def prompt_for_params(source_system_id, source_component_id, mavlink_version, last_param_count_loaded \\ 0) do
-    with [{_, %{param_count: param_count, param_count_loaded: param_count_loaded}}] <- :ets.lookup(@systems, {source_system_id, source_component_id}),
-         retry <- param_count_loaded == last_param_count_loaded,
-         complete <- param_count_loaded == param_count and param_count > 0 do
-      if complete do
-        Logger.info("All #{param_count} parameters loaded for vehicle #{inspect {source_system_id, source_component_id}}")
-      else
-        if param_count > 0 do
-          Logger.info("Loaded #{param_count_loaded}/#{param_count} parameters for vehicle #{inspect {source_system_id, source_component_id}}")
-        else
-          Logger.info("Waiting to receive first parameter from vehicle #{inspect {source_system_id, source_component_id}}")
-        end
-        if retry do
-          MAV.pack_and_send(%APM.Message.ParamRequestList{
-            target_system: source_system_id, target_component: source_component_id}, mavlink_version)
-        end
-        Process.sleep(@param_retry_interval)
-        prompt_for_params(source_system_id, source_component_id, mavlink_version, param_count_loaded)
-      end
-    end
-  end
-  
-  
   defp handle_mav_message(source_system_id, source_component_id, nil, %APM.Message.Heartbeat{}, mavlink_version, state) do
     # First time this MAV system seen, create a system record
     :ets.insert(
@@ -220,13 +197,13 @@ defmodule MAVLink.Util.CacheManager do
       {
         {source_system_id, source_component_id},
         %{  # TODO System struct
-          mavlink_version: mavlink_version,
+          mavlink_version: mavlink_version, # TODO check meaning, move to handle_info
           param_count: 0,
           param_count_loaded: 0}
       }
     )
-    Logger.info("First sighting of vehicle #{inspect {source_system_id, source_component_id}}")
-    spawn_link(__MODULE__, :prompt_for_params, [source_system_id, source_component_id, mavlink_version])
+    Logger.info("First sighting of vehicle #{source_system_id}.#{source_component_id}")
+    spawn_link(ParamRequest, :param_request_list, [source_system_id, source_component_id, mavlink_version])
     state
   end
   
@@ -274,6 +251,5 @@ defmodule MAVLink.Util.CacheManager do
     |> String.split(".")
     |> (fn parts -> parts |> Enum.reverse |> List.first end).()
   end
-  
   
 end
