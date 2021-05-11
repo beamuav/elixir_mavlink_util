@@ -43,6 +43,43 @@ defmodule MAVLink.Util.CacheManager do
   end
   
   
+  def msg() do
+    with {:ok, scid} <- focus() do
+      msg(scid)
+    end
+  end
+  
+  def msg({system_id, component_id}) do
+    {
+      :ok,
+      :ets.foldl(
+        fn
+          {{^system_id, ^component_id, msg_type}, {received, msg}}, acc ->
+            Enum.into [{msg_type, {now() - received, msg}}], acc
+          _, acc ->
+            acc
+        end, %{}, @messages)
+    }
+  end
+  
+  def msg(name) do
+    with {:ok, scid} <- focus() do
+      msg(scid, name)
+    end
+  end
+  
+  def msg(scid={system_id, component_id}, msg_type) when is_atom(msg_type) do
+    with [{_key, {received, message}}] <- :ets.lookup(@messages, {system_id, component_id, msg_type}) do
+      Logger.info("Most recent \"#{dequalify_msg_type msg_type}\" message from vehicle #{inspect scid}")
+      {:ok, now() - received, message}
+    else
+      _ ->
+        Logger.warn("Error attempting to retrieve message of type \"#{dequalify_msg_type msg_type}\" for vehicle #{inspect scid}")
+        {:error, :no_such_message}
+    end
+  end
+  
+  
   def params() do
     with {:ok, scid} <- focus() do
       params(scid)
@@ -61,20 +98,20 @@ defmodule MAVLink.Util.CacheManager do
   
   def params(scid={system_id, component_id}, match) when is_binary(match) do
     with match_upcase <- String.upcase(match),
-         param_list when is_list(param_list) <- :ets.foldl(
+         param_map when is_map(param_map) <- :ets.foldl(
            fn
              {{^system_id, ^component_id, param_id},
               {_, %APM.Message.ParamValue{param_value: param_value}}}, acc ->
                if String.contains?(param_id, match_upcase) do
-                 [{param_id, param_value} | acc]
+                 Enum.into [{param_id, param_value}], acc
                else
                  acc
                end
              _, acc ->
                acc
-           end, [], @params) do
-      Logger.info("Listing #{length(param_list)} parameters from vehicle #{inspect scid} matching \"#{match}\"")
-      {:ok, param_list}
+           end, %{}, @params) do
+      Logger.info("Listing #{param_map |> Map.keys |> length} parameters from vehicle #{inspect scid} matching \"#{match}\"")
+      {:ok, param_map}
     else
       _ ->
         Logger.warn("Error attempting to query params matching \"#{match}\" for vehicle #{inspect scid}")
@@ -198,6 +235,13 @@ defmodule MAVLink.Util.CacheManager do
   
   
   defp now(), do: :erlang.monotonic_time(:milli_seconds)
+
+  
+  defp dequalify_msg_type(msg_type) do
+    to_string(msg_type)
+    |> String.split(".")
+    |> (fn parts -> parts |> Enum.reverse |> List.first end).()
+  end
   
   
 end
