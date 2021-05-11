@@ -103,7 +103,7 @@ defmodule MAVLink.Util.CacheManager do
              {{^system_id, ^component_id, param_id},
               {_, %APM.Message.ParamValue{param_value: param_value}}}, acc ->
                if String.contains?(param_id, match_upcase) do
-                 Enum.into [{param_id, param_value}], acc
+                 Enum.into [{param_id |> String.downcase |> String.to_atom, param_value}], acc
                else
                  acc
                end
