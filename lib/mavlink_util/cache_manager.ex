@@ -23,7 +23,7 @@ defmodule MAVLink.Util.CacheManager do
   @one_second_loop :one_second_loop
   @five_second_loop :five_second_loop
   @ten_second_loop :ten_second_loop
-  #@param_fetch_retry_interval_ms 5000
+  @param_retry_interval 3000
   
   
   defstruct []
@@ -189,30 +189,62 @@ defmodule MAVLink.Util.CacheManager do
     {:noreply, ten_second_loop(state)}
   end
   
-  defp handle_mav_message(source_system, source_component, nil, %APM.Message.Heartbeat{}, version, state) do
+  
+  def prompt_for_params(source_system_id, source_component_id, mavlink_version, last_param_count_loaded \\ 0) do
+    with [{_, %{param_count: param_count, param_count_loaded: param_count_loaded}}] <- :ets.lookup(@systems, {source_system_id, source_component_id}),
+         retry <- param_count_loaded == last_param_count_loaded,
+         complete <- param_count_loaded == param_count and param_count > 0 do
+      if complete do
+        Logger.info("All #{param_count} parameters loaded for vehicle #{inspect {source_system_id, source_component_id}}")
+      else
+        if param_count > 0 do
+          Logger.info("Loaded #{param_count_loaded}/#{param_count} parameters for vehicle #{inspect {source_system_id, source_component_id}}")
+        else
+          Logger.info("Waiting to receive first parameter from vehicle #{inspect {source_system_id, source_component_id}}")
+        end
+        if retry do
+          MAV.pack_and_send(%APM.Message.ParamRequestList{
+            target_system: source_system_id, target_component: source_component_id}, mavlink_version)
+        end
+        Process.sleep(@param_retry_interval)
+        prompt_for_params(source_system_id, source_component_id, mavlink_version, param_count_loaded)
+      end
+    end
+  end
+  
+  
+  defp handle_mav_message(source_system_id, source_component_id, nil, %APM.Message.Heartbeat{}, mavlink_version, state) do
     # First time this MAV system seen, create a system record
     :ets.insert(
       @systems,
       {
-        {source_system, source_component},
+        {source_system_id, source_component_id},
         %{  # TODO System struct
-          mavlink_version: version,
-          heartbeat_last_received: now(),
-          params_last_request_time: now(),
-          params_loaded: false}
+          mavlink_version: mavlink_version,
+          param_count: 0,
+          param_count_loaded: 0}
       }
     )
-    
-    # and request a parameter list
-    MAV.pack_and_send(%APM.Message.ParamRequestList{
-      target_system: source_system, target_component: source_component}, version)
-    Logger.info("First sighting of vehicle #{inspect {source_system, source_component}}, requesting parameter list")
+    Logger.info("First sighting of vehicle #{inspect {source_system_id, source_component_id}}")
+    spawn_link(__MODULE__, :prompt_for_params, [source_system_id, source_component_id, mavlink_version])
     state
   end
   
-  defp handle_mav_message(source_system, source_component, _,
-         param_value_msg = %APM.Message.ParamValue{param_id: param_id}, _, state) do
-    :ets.insert(@params, {{source_system, source_component, param_id}, {now(), param_value_msg}})
+  defp handle_mav_message(source_system_id, source_component_id, _,
+         param_value_msg = %APM.Message.ParamValue{param_id: param_id, param_count: param_count}, _, state) do
+    with [{_, system=%{param_count_loaded: param_count_loaded}}] <- :ets.lookup(@systems, {source_system_id, source_component_id}),
+         is_new <- :ets.lookup(@params, {source_system_id, source_component_id, param_id}) |> length |> Kernel.==(0),
+         true <- :ets.insert(@params, {{source_system_id, source_component_id, param_id}, {now(), param_value_msg}}) do
+      :ets.insert(
+        @systems,
+        {
+          {source_system_id, source_component_id},
+          %{system |
+            param_count: param_count,
+            param_count_loaded: (if is_new, do: param_count_loaded + 1, else: param_count_loaded)}
+        }
+      )
+    end
     state
   end
   
