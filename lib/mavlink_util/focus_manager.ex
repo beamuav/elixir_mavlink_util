@@ -26,9 +26,9 @@ defmodule MAVLink.Util.FocusManager do
   def focus(pid) when is_pid(pid) do
     with [{^pid, scid}] <- :ets.lookup(@sessions, pid) do
       if pid == self() do
-        Logger.info("Vehicle #{inspect scid}")
+        Logger.info("Vehicle #{format scid}")
       else
-        Logger.info("Vehicle #{inspect scid} for #{inspect pid}")
+        Logger.info("Vehicle #{format scid} for #{inspect pid}")
       end
       {:ok, scid}
     else
@@ -57,10 +57,10 @@ defmodule MAVLink.Util.FocusManager do
       if scid_exists do
         :ets.insert(@sessions, {caller_pid, scid})
         Process.monitor(caller_pid)
-        Logger.info("Set focus of #{inspect caller_pid} to #{inspect scid}")
+        Logger.info("Set focus of #{inspect caller_pid} to #{format scid}")
         {:reply, {:ok, scid}, state}
       else
-        Logger.warn("No such vehicle #{inspect scid}")
+        Logger.warn("No such vehicle #{format scid}")
         {:reply, {:error, :no_such_mav}, state}
       end
     else
@@ -70,5 +70,8 @@ defmodule MAVLink.Util.FocusManager do
   
   
   #TODO handle DOWN messages
+  
+  
+  defp format({s, c}), do: "#{s}.#{c}"
   
 end
