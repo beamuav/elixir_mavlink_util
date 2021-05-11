@@ -26,9 +26,9 @@ defmodule MAVLink.Util.FocusManager do
   def focus(pid) when is_pid(pid) do
     with [{^pid, scid}] <- :ets.lookup(@sessions, pid) do
       if pid == self() do
-        Logger.info("Current vehicle focus is #{inspect scid}")
+        Logger.info("Vehicle #{inspect scid}")
       else
-        Logger.info("Current vehicle focus of #{inspect pid} is #{inspect scid}")
+        Logger.info("Vehicle #{inspect scid} for #{inspect pid}")
       end
       {:ok, scid}
     else

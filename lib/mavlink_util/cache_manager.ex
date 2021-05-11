@@ -38,7 +38,7 @@ defmodule MAVLink.Util.CacheManager do
   
   def mavs() do
     scids = :ets.foldl(fn ({scid, _}, acc) -> [scid | acc] end, [], @systems)
-    Logger.info("Listing #{length(scids)} visible vehicle {system, component} ids")
+    Logger.info("Listing #{length(scids)} visible vehicles")
     {:ok, scids}
   end
   
@@ -68,13 +68,13 @@ defmodule MAVLink.Util.CacheManager do
     end
   end
   
-  def msg(scid={system_id, component_id}, msg_type) when is_atom(msg_type) do
+  def msg({system_id, component_id}, msg_type) when is_atom(msg_type) do
     with [{_key, {received, message}}] <- :ets.lookup(@messages, {system_id, component_id, msg_type}) do
-      Logger.info("Most recent \"#{dequalify_msg_type msg_type}\" message from vehicle #{inspect scid}")
+      Logger.info("Most recent \"#{dequalify_msg_type msg_type}\" message")
       {:ok, now() - received, message}
     else
       _ ->
-        Logger.warn("Error attempting to retrieve message of type \"#{dequalify_msg_type msg_type}\" for vehicle #{inspect scid}")
+        Logger.warn("Error attempting to retrieve message of type \"#{dequalify_msg_type msg_type}\"")
         {:error, :no_such_message}
     end
   end
@@ -96,7 +96,7 @@ defmodule MAVLink.Util.CacheManager do
     end
   end
   
-  def params(scid={system_id, component_id}, match) when is_binary(match) do
+  def params({system_id, component_id}, match) when is_binary(match) do
     with match_upcase <- String.upcase(match),
          param_map when is_map(param_map) <- :ets.foldl(
            fn
@@ -110,11 +110,11 @@ defmodule MAVLink.Util.CacheManager do
              _, acc ->
                acc
            end, %{}, @params) do
-      Logger.info("Listing #{param_map |> Map.keys |> length} parameters from vehicle #{inspect scid} matching \"#{match}\"")
+      Logger.info("Listing #{param_map |> Map.keys |> length} parameters matching \"#{match}\"")
       {:ok, param_map}
     else
       _ ->
-        Logger.warn("Error attempting to query params matching \"#{match}\" for vehicle #{inspect scid}")
+        Logger.warn("Error attempting to query params matching \"#{match}\"")
         {:error, :query_failed}
     end
   end
