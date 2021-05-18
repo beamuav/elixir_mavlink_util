@@ -15,6 +15,8 @@ defmodule MAVLink.Util.CacheManager do
   require Logger
   alias MAVLink.Router, as: MAV
   alias MAVLink.Util.ParamRequest
+  alias APM.Message.Heartbeat
+  alias APM.Message.ParamValue
   import MAVLink.Util.FocusManager, only: [focus: 0]
   
   
@@ -86,7 +88,7 @@ defmodule MAVLink.Util.CacheManager do
     end
   end
   
-  def params(scid={_, _}) do
+  def params(scid={_, _, _}) do
     params(scid, "")
   end
   
@@ -96,12 +98,12 @@ defmodule MAVLink.Util.CacheManager do
     end
   end
   
-  def params({system_id, component_id}, match) when is_binary(match) do
+  def params({system_id, component_id, _mavlink_version}, match) when is_binary(match) do
     with match_upcase <- String.upcase(match),
          param_map when is_map(param_map) <- :ets.foldl(
            fn
              {{^system_id, ^component_id, param_id},
-              {_, %APM.Message.ParamValue{param_value: param_value}}}, acc ->
+              {_, %ParamValue{param_value: param_value}}}, acc ->
                if String.contains?(param_id, match_upcase) do
                  Enum.into [{param_id |> String.downcase |> String.to_atom, param_value}], acc
                else
@@ -190,28 +192,32 @@ defmodule MAVLink.Util.CacheManager do
   end
   
   
-  defp handle_mav_message(source_system_id, source_component_id, nil, %APM.Message.Heartbeat{}, mavlink_version, state) do
+  defp handle_mav_message(source_system_id, source_component_id, nil,
+         %Heartbeat{type: type, mavlink_version: mavlink_minor_version},
+         mavlink_major_version, state) do
     # First time this MAV system seen, create a system record
     :ets.insert(
       @systems,
       {
         {source_system_id, source_component_id},
         %{  # TODO System struct
-          mavlink_version: mavlink_version, # TODO check meaning, move to handle_info
+          mavlink_major_version: mavlink_major_version,
+          mavlink_minor_version: mavlink_minor_version,
           param_count: 0,
           param_count_loaded: 0}
       }
     )
-    Logger.info("First sighting of vehicle #{source_system_id}.#{source_component_id}")
-    spawn_link(ParamRequest, :param_request_list, [source_system_id, source_component_id, mavlink_version])
+    Logger.info("First sighting of vehicle #{source_system_id}.#{source_component_id}: #{APM.describe type}")
+    spawn_link(ParamRequest, :param_request_list, [source_system_id, source_component_id, mavlink_major_version])
     state
   end
   
   defp handle_mav_message(source_system_id, source_component_id, _,
-         param_value_msg = %APM.Message.ParamValue{param_id: param_id, param_count: param_count}, _, state) do
+         param_value_msg = %ParamValue{param_id: param_id, param_count: param_count}, _, state) do
     with [{_, system=%{param_count_loaded: param_count_loaded}}] <- :ets.lookup(@systems, {source_system_id, source_component_id}),
          is_new <- :ets.lookup(@params, {source_system_id, source_component_id, param_id}) |> length |> Kernel.==(0),
          true <- :ets.insert(@params, {{source_system_id, source_component_id, param_id}, {now(), param_value_msg}}) do
+      # TODO Hidden parameters can become un-hidden, increasing param_count, in which case we need to spawn param_request_list again.
       :ets.insert(
         @systems,
         {
