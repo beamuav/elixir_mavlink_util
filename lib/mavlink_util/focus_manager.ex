@@ -39,7 +39,8 @@ defmodule MAVLink.Util.FocusManager do
   end
   
   def focus(system_id, component_id \\ 1) do
-      GenServer.call(MAVLink.Util.FocusManager, {:focus, {system_id, component_id}})
+  {:ok, {system_id, component_id, _}} = GenServer.call(MAVLink.Util.FocusManager, {:focus, {system_id, component_id}})
+  IEx.configure(default_prompt: "iex(%counter) vehicle #{system_id}.#{component_id}>")  # Only works for single IEx session
   end
   
   
@@ -51,14 +52,21 @@ defmodule MAVLink.Util.FocusManager do
 
   
   @impl true
-  def handle_call({:focus, scid}, {caller_pid, _}, state) do
-    with scid_exists when is_boolean(scid_exists) <-
-           :ets.foldl(fn ({next_scid, _}, acc) -> acc or (next_scid==scid) end, false, @systems) do
-      if scid_exists do
-        :ets.insert(@sessions, {caller_pid, scid})
+  def handle_call({:focus, scid={system_id, component_id}}, {caller_pid, _}, state) do
+    with mavlink_major_version when is_number(mavlink_major_version) <-
+           :ets.foldl(
+             fn ({next_scid, %{mavlink_major_version: mmv}}, acc) ->
+               if next_scid==scid do
+                 mmv
+               else
+                 acc
+               end
+             end, 0, @systems) do
+      if mavlink_major_version > 0 do
+        :ets.insert(@sessions, {caller_pid, {system_id, component_id, mavlink_major_version}})
         Process.monitor(caller_pid)
-        Logger.info("Set focus of #{inspect caller_pid} to #{format scid}")
-        {:reply, {:ok, scid}, state}
+        Logger.info("Set focus to #{format scid}")
+        {:reply, {:ok, {system_id, component_id, mavlink_major_version}}, state}
       else
         Logger.warn("No such vehicle #{format scid}")
         {:reply, {:error, :no_such_mav}, state}
@@ -71,7 +79,7 @@ defmodule MAVLink.Util.FocusManager do
   
   #TODO handle DOWN messages
   
-  
+  defp format({s, c, _}), do: format({s, c})
   defp format({s, c}), do: "#{s}.#{c}"
   
 end
