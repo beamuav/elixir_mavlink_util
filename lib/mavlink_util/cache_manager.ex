@@ -51,7 +51,7 @@ defmodule MAVLink.Util.CacheManager do
     end
   end
   
-  def msg({system_id, component_id}) do
+  def msg({system_id, component_id, _}) do
     {
       :ok,
       :ets.foldl(
@@ -70,7 +70,7 @@ defmodule MAVLink.Util.CacheManager do
     end
   end
   
-  def msg({system_id, component_id}, msg_type) when is_atom(msg_type) do
+  def msg({system_id, component_id, _}, msg_type) when is_atom(msg_type) do
     with [{_key, {received, message}}] <- :ets.lookup(@messages, {system_id, component_id, msg_type}) do
       Logger.info("Most recent \"#{dequalify_msg_type msg_type}\" message")
       {:ok, now() - received, message}
