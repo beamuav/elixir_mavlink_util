@@ -4,11 +4,12 @@
 #  messages for extra feedback. The same API can be called directly from code.
 
 import MAVLink.Router, only: [subscribe: 0, subscribe: 1, unsubscribe: 0, pack_and_send: 1, pack_and_send: 2]
+import MAVLink.Util.Arm, only: [arm: 0, arm: 3, disarm: 0, disarm: 3]
 import MAVLink.Util.CacheManager, only: [mavs: 0, msg: 0, msg: 1, msg: 2, params: 0, params: 1, params: 2]
 import MAVLink.Util.FocusManager, only: [focus: 0, focus: 1, focus: 2]
 import MAVLink.Util.ParamRequest, only: [param_request_list: 0, param_request_list: 3]
 import MAVLink.Util.ParamSet, only: [param_set: 2, param_set: 5]
-import MAVLink.Util.SITL, only: [forward_rc: 0, forward_rc: 3]
+import MAVLink.Util.SITL, only: [forward_rc: 0, forward_rc: 4]
 
 alias APM.Message.{  # TODO can MAVLink generate a macro for this?
   Heartbeat, SysStatus, SystemTime, Ping, ChangeOperatorControl, ChangeOperatorControlAck, AuthKey, SetMode,
