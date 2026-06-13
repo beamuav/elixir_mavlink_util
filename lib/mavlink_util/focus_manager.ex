@@ -5,81 +5,114 @@ defmodule MAVLink.Util.FocusManager do
   by letting the user select a MAV to work with and transparently adding
   {system_id, component_id} tuples to call arguments.
   """
-  
+
   use GenServer
   require Logger
-  
+
   @sessions :sessions
   @systems :systems
 
-  
-  # API
   def start_link(state, opts \\ []) do
     GenServer.start_link(__MODULE__, state, [{:name, __MODULE__} | opts])
   end
-  
-  
-  def focus() do
-    self() |> focus()
+
+  def focus do
+    focus(self())
   end
-  
+
   def focus(pid) when is_pid(pid) do
-    with [{^pid, scid}] <- :ets.lookup(@sessions, pid) do
-      if pid == self() do
-        Logger.info("Vehicle #{format scid}")
-      else
-        Logger.info("Vehicle #{format scid} for #{inspect pid}")
-      end
-      {:ok, scid}
-    else
+    case :ets.lookup(@sessions, pid) do
+      [{^pid, scid}] ->
+        if pid == self() do
+          Logger.info("Vehicle #{format(scid)}")
+        else
+          Logger.info("Vehicle #{format(scid)} for #{inspect(pid)}")
+        end
+
+        {:ok, scid}
+
       _ ->
-        Logger.warn("#{inspect pid} has no vehicle focus")
+        Logger.warning("#{inspect(pid)} has no vehicle focus")
         {:error, :not_focussed}
     end
   end
-  
+
   def focus(system_id, component_id \\ 1) do
-  {:ok, {system_id, component_id, _}} = GenServer.call(MAVLink.Util.FocusManager, {:focus, {system_id, component_id}})
-  IEx.configure(default_prompt: "iex(%counter) vehicle #{system_id}.#{component_id}>")  # Only works for single IEx session
+    case GenServer.call(__MODULE__, {:focus, {system_id, component_id}}) do
+      {:ok, scid} ->
+        configure_iex_prompt(system_id, component_id)
+        {:ok, scid}
+
+      {:error, reason} = error ->
+        Logger.warning("Could not set focus to #{system_id}.#{component_id}: #{reason}")
+        error
+    end
   end
-  
-  
+
   @impl true
   def init(_opts) do
     :ets.new(@sessions, [:named_table, :protected, {:read_concurrency, true}, :set])
-    {:ok,%{}}
+    {:ok, %{monitors: %{}}}
   end
 
-  
   @impl true
-  def handle_call({:focus, scid={system_id, component_id}}, {caller_pid, _}, state) do
-    with mavlink_major_version when is_number(mavlink_major_version) <-
-           :ets.foldl(
-             fn ({next_scid, %{mavlink_major_version: mmv}}, acc) ->
-               if next_scid==scid do
-                 mmv
-               else
-                 acc
-               end
-             end, 0, @systems) do
-      if mavlink_major_version > 0 do
+  def handle_call({:focus, scid = {system_id, component_id}}, {caller_pid, _}, state) do
+    case lookup_mavlink_version(scid) do
+      mavlink_major_version when is_number(mavlink_major_version) and mavlink_major_version > 0 ->
         :ets.insert(@sessions, {caller_pid, {system_id, component_id, mavlink_major_version}})
-        Process.monitor(caller_pid)
-        Logger.info("Set focus to #{format scid}")
-        {:reply, {:ok, {system_id, component_id, mavlink_major_version}}, state}
-      else
-        Logger.warn("No such vehicle #{format scid}")
+
+        monitors =
+          if Enum.any?(state.monitors, fn {_ref, pid} -> pid == caller_pid end) do
+            state.monitors
+          else
+            ref = Process.monitor(caller_pid)
+            Map.put(state.monitors, ref, caller_pid)
+          end
+
+        Logger.info("Set focus to #{format(scid)}")
+        {:reply, {:ok, {system_id, component_id, mavlink_major_version}}, %{state | monitors: monitors}}
+
+      0 ->
+        Logger.warning("No such vehicle #{format(scid)}")
         {:reply, {:error, :no_such_mav}, state}
-      end
-    else
-      _ -> {:reply, {:error, :no_mav_data}, state}
+
+      _ ->
+        {:reply, {:error, :no_mav_data}, state}
     end
   end
-  
-  
-  #TODO handle DOWN messages
-  
+
+  @impl true
+  def handle_info({:DOWN, ref, :process, pid, _reason}, state) do
+    :ets.delete(@sessions, pid)
+    {:noreply, %{state | monitors: Map.delete(state.monitors, ref)}}
+  end
+
+  defp lookup_mavlink_version({system_id, component_id}) do
+    case :ets.info(@systems) do
+      :undefined ->
+        0
+
+      _ ->
+        :ets.foldl(
+          fn
+            {{^system_id, ^component_id}, %{mavlink_major_version: mmv}}, _acc ->
+              mmv
+
+            _, acc ->
+              acc
+          end,
+          0,
+          @systems
+        )
+    end
+  end
+
+  defp configure_iex_prompt(system_id, component_id) do
+    if Code.ensure_loaded?(IEx) and function_exported?(IEx, :started?, 0) and IEx.started?() do
+      IEx.configure(default_prompt: "iex(%counter) vehicle #{system_id}.#{component_id}>")
+    end
+  end
+
   defp format({s, c, _}), do: format({s, c})
   defp format({s, c}), do: "#{s}.#{c}"
-  
 end

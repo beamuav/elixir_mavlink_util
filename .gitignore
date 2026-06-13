@@ -23,3 +23,5 @@ erl_crash.dump
 mavlink_util-*.tar
 
 /.idea/
+*.iml
+.DS_Store

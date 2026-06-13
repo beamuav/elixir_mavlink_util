@@ -26,11 +26,11 @@ defmodule MAVLink.Util.SITL do
   def _connect(system_id, component_id, mavlink_version, sitl_rc_in_port) do
     with {:ok, socket} <- :gen_udp.open(0, [:binary, ip: {127, 0, 0, 1}]),
          :ok <- MAV.subscribe message: RcChannelsRaw, source_system: system_id, source_component: component_id do
-      Logger.info("Start forwarding RC from vehicle #{system_id}.#{component_id} to SITL rc-in port #{sitl_rc_in_port}}")
+      Logger.info("Start forwarding RC from vehicle #{system_id}.#{component_id} to SITL rc-in port #{sitl_rc_in_port}")
       _forward(system_id, component_id, mavlink_version, sitl_rc_in_port, socket, 0)
     else
       _ ->
-        Logger.warn("Could not subscribe or open port to forward RC from vehicle #{system_id}.#{component_id}")
+        Logger.warning("Could not subscribe or open port to forward RC from vehicle #{system_id}.#{component_id}")
     end
   end
   
