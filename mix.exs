@@ -5,7 +5,7 @@ defmodule MAVLink.Util.MixProject do
   @parser_marker "# patched by mavlink_util for OTP lib_dir resolution"
 
   def project do
-    patch_mavlink_parser!()
+    patch_mavlink_deps!()
 
     [
       app: :mavlink_util,
@@ -24,7 +24,7 @@ defmodule MAVLink.Util.MixProject do
   def application do
     [
       mod: {MAVLink.Util.Application, []},
-      extra_applications: [:mavlink, :logger]
+      extra_applications: [:mavlink, :logger, :xmerl]
     ]
   end
 
@@ -37,7 +37,8 @@ defmodule MAVLink.Util.MixProject do
   defp aliases do
     [
       setup: ["deps.get", "compile"],
-      test: ["test --no-start"]
+      test: ["test --no-start"],
+      "mavlink.generate": ["mavlink.generate"]
     ]
   end
 
@@ -54,12 +55,16 @@ defmodule MAVLink.Util.MixProject do
   defp package do
     [
       name: "mavlink_util",
-      files: ["lib", "config", "priv", ".iex.exs", "mix.exs", "README.md", "LICENSE"],
+      files: ["lib", "config", "priv", "vendor", "docs", ".iex.exs", "mix.exs", "README.md", "LICENSE", ".gitmodules"],
       exclude_patterns: [".DS_Store"],
       licenses: ["MIT"],
       links: %{"Github" => "https://github.com/robinhilliard/elixir-mavlink-util"},
       maintainers: ["Robin Hilliard"]
     ]
+  end
+
+  defp patch_mavlink_deps! do
+    patch_mavlink_parser!()
   end
 
   defp patch_mavlink_parser! do
